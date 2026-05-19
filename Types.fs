@@ -16,4 +16,5 @@ type State = {
     Invulnerable: int
     GameOver: bool
     Victory: bool
+    Paused: bool
 }

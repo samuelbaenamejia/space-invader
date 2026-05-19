@@ -1,6 +1,7 @@
 module App.Game
 
 open System
+open System.IO
 open System.Threading
 open App.Types
 open App.Utils
@@ -13,8 +14,10 @@ let initialState = {
     PlayerBullets = []; EnemyBullets = []; Enemies = []
     Tick = -1; RedrawScreen = true
     Kills = 0; TotalKills = KILLS_TO_WIN
-    Invulnerable = 0; GameOver = false; Victory = false
+    Invulnerable = 0; GameOver = false; Victory = false; Paused = false
 }
+
+let saveFile = "savegame.txt"
 
 // ========== TICK ==========
 
@@ -49,7 +52,9 @@ let playerShoot key state =
 let processKeyboard state =
     if Console.KeyAvailable then
         let k = Console.ReadKey(true)
-        state |> movePlayer k.Key |> playerShoot k.Key
+        match k.Key with
+        | ConsoleKey.P -> { state with Paused = true }
+        | _ -> state |> movePlayer k.Key |> playerShoot k.Key
     else state
 
 // ========== ENEMIGOS ==========
@@ -151,6 +156,27 @@ let checkWin state =
         { state with Victory = true; RedrawScreen = true }
     else state
 
+// ========== GUARDAR ==========
+
+let saveGame state =
+    try
+        File.WriteAllLines(saveFile, [| string state.Score; string state.Kills; string state.Lives |])
+        true
+    with _ -> false
+
+let loadGame () =
+    try
+        if File.Exists(saveFile) then
+            let lines = File.ReadAllLines(saveFile)
+            if lines.Length >= 2 then
+                let score = int lines.[0]
+                let kills = int lines.[1]
+                let lives = if lines.Length >= 3 then int lines.[2] else MAX_LIVES
+                Some { initialState with Score = score; Kills = kills; Lives = lives }
+            else None
+        else None
+    with _ -> None
+
 // ========== DIBUJO ==========
 
 let drawHUD state =
@@ -203,74 +229,106 @@ let drawVictory state =
 // ========== MENU ==========
 
 let showMenu () =
+    let hasSave = File.Exists(saveFile)
     Console.CursorVisible <- false
     let mutable selected = 0
+    let options =
+        if hasSave then [| "Nueva Partida"; "Continuar Partida"; "Salir" |]
+        else [| "Nueva Partida"; "Salir" |]
+    let maxIdx = options.Length - 1
     let mutable running = true
     while running do
         Console.Clear()
         drawCentered 4 ConsoleColor.Yellow "SPACE INVADERS"
         drawCentered 6 ConsoleColor.Gray "Defiende la Tierra de los invasores!"
         drawCentered 7 ConsoleColor.DarkGray "WASD/Flechas: mover   Espacio: disparar"
-        for i in 0..1 do
-            let opts = [| "Nueva Partida"; "Salir" |]
+        for i in 0 .. maxIdx do
             if i = selected then
-                drawCentered (12 + i * 2) ConsoleColor.Green (sprintf ">> %s <<" opts.[i])
+                drawCentered (12 + i * 2) ConsoleColor.Green (sprintf ">> %s <<" options.[i])
             else
-                drawCentered (12 + i * 2) ConsoleColor.Cyan opts.[i]
+                drawCentered (12 + i * 2) ConsoleColor.Cyan options.[i]
         match Console.ReadKey(true).Key with
         | ConsoleKey.UpArrow | ConsoleKey.W -> selected <- max 0 (selected - 1)
-        | ConsoleKey.DownArrow | ConsoleKey.S -> selected <- min 1 (selected + 1)
+        | ConsoleKey.DownArrow | ConsoleKey.S -> selected <- min maxIdx (selected + 1)
         | ConsoleKey.Enter -> running <- false
         | _ -> ()
     Console.Clear()
-    selected
+    selected, hasSave
 
 // ========== BUCLE ==========
 
 let rec mainLoop state =
-    let s =
-        state
-        |> updateTick
-        |> processKeyboard
-        |> spawnEnemy
-        |> moveEnemies
-        |> enemyShoot
-        |> moveBullets
-        |> checkCollisions
-        |> checkWin
-
-    drawFrame s
-    wait 33
-
-    if s.GameOver then
-        drawGameOver s
+    if state.Paused then
+        drawFrame state
+        drawCentered 10 ConsoleColor.Yellow "=== PAUSA ==="
+        drawCentered 12 ConsoleColor.White "P = Continuar"
+        drawCentered 13 ConsoleColor.White "S = Guardar partida"
+        drawCentered 14 ConsoleColor.White "M = Menu principal"
         wait 33
         if Console.KeyAvailable then
             match Console.ReadKey(true).Key with
-            | ConsoleKey.R -> mainLoop initialState
+            | ConsoleKey.P -> mainLoop { state with Paused = false }
+            | ConsoleKey.S ->
+                if saveGame state then
+                    drawCentered 16 ConsoleColor.Green "Partida guardada!"
+                else
+                    drawCentered 16 ConsoleColor.Red "Error al guardar!"
+                wait 500
+                mainLoop state
             | ConsoleKey.M -> ()
-            | _ -> mainLoop s
-        else mainLoop s
-    elif s.Victory then
-        drawVictory s
+            | _ -> mainLoop state
+        else mainLoop state
+    else
+        let s =
+            state
+            |> updateTick
+            |> processKeyboard
+            |> spawnEnemy
+            |> moveEnemies
+            |> enemyShoot
+            |> moveBullets
+            |> checkCollisions
+            |> checkWin
+
+        drawFrame s
         wait 33
-        if Console.KeyAvailable then
-            match Console.ReadKey(true).Key with
-            | ConsoleKey.R -> mainLoop initialState
-            | ConsoleKey.M -> ()
-            | _ -> mainLoop s
+
+        if s.GameOver then
+            drawGameOver s
+            wait 33
+            if Console.KeyAvailable then
+                match Console.ReadKey(true).Key with
+                | ConsoleKey.R -> mainLoop initialState
+                | ConsoleKey.M -> ()
+                | _ -> mainLoop s
+            else mainLoop s
+        elif s.Victory then
+            drawVictory s
+            wait 33
+            if Console.KeyAvailable then
+                match Console.ReadKey(true).Key with
+                | ConsoleKey.R -> mainLoop initialState
+                | ConsoleKey.M -> ()
+                | _ -> mainLoop s
+            else mainLoop s
         else mainLoop s
-    else mainLoop s
 
 // ========== INICIO ==========
 
 let start () =
     let mutable salir = false
     while not salir do
-        match showMenu () with
-        | 1 ->
+        let opcion, hasSave = showMenu ()
+        if opcion = 0 then
+            mainLoop initialState
+        elif hasSave && opcion = 1 then
+            match loadGame () with
+            | Some s -> mainLoop s
+            | None ->
+                drawCentered 14 ConsoleColor.Red "Error al cargar partida"
+                wait 1000
+        else
             salir <- true
             Console.CursorVisible <- true
             printfn "Gracias por jugar!"
             wait 1000
-        | _ -> mainLoop initialState
