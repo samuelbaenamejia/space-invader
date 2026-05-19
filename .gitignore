@@ -1,6 +1,5 @@
 bin/
 obj/
 savegame.txt
-*.user
-*.suo
 .vs/
+.ionide/

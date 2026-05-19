@@ -1,6 +1,4 @@
-module SpaceInvaders.Program
-
-open SpaceInvaders.Game
+open App.Game
 
 [<EntryPoint>]
 let main args =
