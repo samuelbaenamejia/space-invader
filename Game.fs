@@ -12,6 +12,7 @@ let initialState = {
     PlayerX = START_X; PlayerY = START_Y
     Lives = MAX_LIVES; Score = 0
     PlayerBullets = []; EnemyBullets = []; Enemies = []
+    Explosions = []
     Tick = -1; RedrawScreen = true
     Kills = 0; TotalKills = KILLS_TO_WIN
     Invulnerable = 0; GameOver = false; Victory = false; Paused = false
@@ -77,7 +78,7 @@ let moveEnemies state =
         let moved =
             state.Enemies |> List.map (fun e ->
                 let nx = e.X - 1
-                if nx < 1 then { e with X = 0 }
+                if nx < 2 then { e with X = 0 }
                 else
                     let ny, nd =
                         if state.Tick % 4 = 0 then
@@ -115,13 +116,15 @@ let moveBullets state =
 // ========== COLISIONES ==========
 
 let checkCollisions state =
-    let (remainingBullets, remainingEnemies, kills) =
+    let (remainingBullets, remainingEnemies, kills, newExplosions) =
         state.PlayerBullets
-        |> List.fold (fun (bullets, enemies, k) b ->
+        |> List.fold (fun (bullets: Bullet list, enemies: Enemy list, k: int, exps: Explosion list) b ->
             match enemies |> List.tryFind (fun e -> abs(b.X - e.X) <= 2 && b.Y = e.Y) with
-            | Some e -> (bullets, enemies |> List.filter (fun e2 -> e2 <> e), k + 1)
-            | None -> (b :: bullets, enemies, k)
-        ) ([], state.Enemies, 0)
+            | Some e ->
+                (bullets, enemies |> List.filter (fun e2 -> e2 <> e), k + 1,
+                 { X = e.X; Y = e.Y; Timer = 15 } :: exps)
+            | None -> (b :: bullets, enemies, k, exps)
+        ) ([], state.Enemies, 0, [])
 
     let bulletHit =
         state.Invulnerable <= 0 &&
@@ -142,12 +145,24 @@ let checkCollisions state =
             RedrawScreen = state.RedrawScreen || kills > 0 }
 
     if bulletHit || enemyTouch then
+        let playerExp = { X = state.PlayerX; Y = state.PlayerY; Timer = 15 }
         { s with
             Lives = s.Lives - 1
             Invulnerable = 60
             GameOver = s.Lives - 1 <= 0
-            RedrawScreen = true }
-    else s
+            RedrawScreen = true
+            Explosions = s.Explosions @ playerExp :: newExplosions }
+    else
+        { s with Explosions = s.Explosions @ newExplosions }
+
+// ========== EXPLOSIONES ==========
+
+let updateExplosions state =
+    let alive =
+        state.Explosions
+        |> List.map (fun e -> { e with Timer = e.Timer - 1 })
+        |> List.filter (fun e -> e.Timer > 0)
+    { state with Explosions = alive }
 
 // ========== VICTORIA ==========
 
@@ -179,15 +194,7 @@ let loadGame () =
 
 // ========== DIBUJO ==========
 
-let drawHUD state =
-    drawAt 2 0 ConsoleColor.White (sprintf "SCORE: %d" state.Score)
-    drawAt 25 0 ConsoleColor.Cyan (sprintf "KILLS: %d/%d" state.Kills state.TotalKills)
-    let hearts = String.replicate state.Lives "❤️ "
-    let empty = String.replicate (MAX_LIVES - state.Lives) "  "
-    drawAt (GAME_WIDTH - 12) 0 ConsoleColor.Red (hearts + empty)
-
-let drawFrame state =
-    Console.Clear()
+let drawBorders () =
     for x in 1 .. GAME_WIDTH - 2 do
         drawAt x GAME_TOP ConsoleColor.DarkGray "═"
         drawAt x GAME_BOTTOM ConsoleColor.DarkGray "═"
@@ -198,19 +205,32 @@ let drawFrame state =
     drawAt (GAME_WIDTH - 1) GAME_TOP ConsoleColor.DarkGray "╗"
     drawAt 0 GAME_BOTTOM ConsoleColor.DarkGray "╚"
     drawAt (GAME_WIDTH - 1) GAME_BOTTOM ConsoleColor.DarkGray "╝"
+
+let drawHUD state =
+    drawAt 2 0 ConsoleColor.White (sprintf "SCORE: %d" state.Score)
+    drawAt 25 0 ConsoleColor.Cyan (sprintf "KILLS: %d/%d" state.Kills state.TotalKills)
+    drawAt (GAME_WIDTH - 10) 0 ConsoleColor.Black "        "
+    for i in 0 .. state.Lives - 1 do
+        drawAt (GAME_WIDTH - 10 + i * 2) 0 ConsoleColor.Red "❤️"
+
+let drawFrame state =
+    clearGameArea ()
     drawHUD state
     for e in state.Enemies do
         drawAt e.X e.Y ConsoleColor.Red "👾"
     for b in state.PlayerBullets do
-        drawAt b.X b.Y ConsoleColor.Yellow "|"
+        drawAt b.X b.Y ConsoleColor.Yellow "⇒"
     for b in state.EnemyBullets do
-        drawAt b.X b.Y ConsoleColor.Red "|"
+        drawAt b.X b.Y ConsoleColor.Red "⇐"
+    for e in state.Explosions do
+        drawAt e.X e.Y ConsoleColor.Red "💥"
     if state.Invulnerable <= 0 || state.Tick % 4 < 2 then
         drawAt state.PlayerX state.PlayerY ConsoleColor.Green "🚀"
 
 // ========== PANTALLAS ==========
 
 let drawGameOver state =
+    Console.Clear()
     drawCentered 8 ConsoleColor.Red "GAME OVER"
     drawCentered 12 ConsoleColor.White (sprintf "Score final: %d" state.Score)
     drawCentered 14 ConsoleColor.White (sprintf "Enemigos eliminados: %d" state.Kills)
@@ -218,6 +238,7 @@ let drawGameOver state =
     drawCentered 18 ConsoleColor.Cyan "Presiona M para menu principal"
 
 let drawVictory state =
+    Console.Clear()
     drawCentered 6 ConsoleColor.Green "VICTORIA!"
     drawCentered 8 ConsoleColor.Yellow "Tierra salvada!"
     drawCentered 10 ConsoleColor.White "Los invasores han sido derrotados."
@@ -259,7 +280,6 @@ let showMenu () =
 
 let rec mainLoop state =
     if state.Paused then
-        drawFrame state
         drawCentered 10 ConsoleColor.Yellow "=== PAUSA ==="
         drawCentered 12 ConsoleColor.White "P = Continuar"
         drawCentered 13 ConsoleColor.White "S = Guardar partida"
@@ -267,7 +287,9 @@ let rec mainLoop state =
         wait 33
         if Console.KeyAvailable then
             match Console.ReadKey(true).Key with
-            | ConsoleKey.P -> mainLoop { state with Paused = false }
+            | ConsoleKey.P ->
+                clearGameArea ()
+                mainLoop { state with Paused = false }
             | ConsoleKey.S ->
                 if saveGame state then
                     drawCentered 16 ConsoleColor.Green "Partida guardada!"
@@ -288,6 +310,7 @@ let rec mainLoop state =
             |> enemyShoot
             |> moveBullets
             |> checkCollisions
+            |> updateExplosions
             |> checkWin
 
         drawFrame s
@@ -320,10 +343,15 @@ let start () =
     while not salir do
         let opcion, hasSave = showMenu ()
         if opcion = 0 then
+            Console.Clear ()
+            drawBorders ()
             mainLoop initialState
         elif hasSave && opcion = 1 then
             match loadGame () with
-            | Some s -> mainLoop s
+            | Some s ->
+                Console.Clear ()
+                drawBorders ()
+                mainLoop s
             | None ->
                 drawCentered 14 ConsoleColor.Red "Error al cargar partida"
                 wait 1000

@@ -22,5 +22,10 @@ let drawCentered y color (msg: string) =
     let x = max 0 ((Console.WindowWidth - msg.Length) / 2)
     drawAt x y color msg
 
+let clearGameArea () =
+    let line = String(' ', GAME_WIDTH - 2)
+    for y in GAME_TOP + 1 .. GAME_BOTTOM - 1 do
+        drawAt 1 y ConsoleColor.Black line
+
 let wait (ms: int) =
     Threading.Thread.Sleep(ms)

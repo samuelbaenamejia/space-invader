@@ -2,6 +2,7 @@ module App.Types
 
 type Bullet = { X: int; Y: int }
 type Enemy = { X: int; Y: int; Dir: int }
+type Explosion = { X: int; Y: int; Timer: int }
 
 type State = {
     PlayerX: int; PlayerY: int
@@ -9,6 +10,7 @@ type State = {
     PlayerBullets: Bullet list
     EnemyBullets: Bullet list
     Enemies: Enemy list
+    Explosions: Explosion list
     Tick: int
     RedrawScreen: bool
     Kills: int
