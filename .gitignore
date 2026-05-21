@@ -1,0 +1,6 @@
+bin/
+obj/
+savegame.json
+.vs/
+*.user
+*.suo
