@@ -1,3 +1,5 @@
+/// Punto de entrada de la aplicación
+/// Inicia el enrutador y captura cualquier error inesperado
 open System
 open App
 open App.Utils

@@ -1,3 +1,4 @@
+/// Módulo del juego - Lógica principal: movimiento, colisiones, dibujo y pausa
 module App.Game
 
 open System
@@ -6,30 +7,35 @@ open App.Utils
 open App.Types
 open App.Save
 
+/// Estado de la pantalla actual del juego
 type GameScreen =
-| Playing
-| Paused
-| GameOver
-| Victory
-| Quit
+| Playing   /// El juego se está ejecutando
+| Paused    /// El juego está en pausa
+| GameOver  /// El jugador perdió todas las vidas
+| Victory   /// El jugador ganó (10 kills)
+| Quit      /// Volver al menú principal
 
+/// Estado del jugador (vivo o explotando)
 type PlayerState =
 | Alive
 | Exploding
 
+/// Enemigo: posición, dirección vertical y si está vivo
 type Enemy = {
     X: int
     Y: int
-    Dir: int
+    Dir: int       /// Dirección vertical: 1 = abajo, -1 = arriba
     Alive: bool
-    HitTick: int
+    HitTick: int   /// Tick en que fue golpeado (para animación de explosión)
 }
 
+/// Misil del jugador o del enemigo
 type Missile = {
     X: int
     Y: int
 }
 
+/// Estado completo del juego en un momento dado
 type GameState = {
     Screen: GameScreen
     PlayerX: int
@@ -41,34 +47,37 @@ type GameState = {
     Enemies: Enemy list
     PlayerMissiles: Missile list
     EnemyMissiles: Missile list
-    Tick: int
-    RedrawScreen: bool
-    ShootCooldown: int
+    Tick: int          /// Contador de ciclos del juego (aumenta en cada frame)
+    RedrawScreen: bool /// Si es true, se redibuja la pantalla en el siguiente frame
+    ShootCooldown: int /// Tiempo de espera entre disparos del jugador
 }
 
+/// Obtiene el ancho útil de la pantalla
 let screenW () = Console.BufferWidth - 1
 let screenH () = Console.BufferHeight - 1
 
-let createEnemies () =
+/// Crea un nuevo enemigo en una posición aleatoria en el lado derecho
+let createEnemy () =
     let sw = screenW ()
     let rng = Random ()
-    [| { X = sw - 5
-         Y = rng.Next(2, Console.BufferHeight - 2)
-         Dir = if rng.Next(2) = 0 then 1 else -1
-         Alive = true
-         HitTick = -1 } |]
+    { X = sw - 5
+      Y = rng.Next(2, Console.BufferHeight - 2)
+      Dir = if rng.Next(2) = 0 then 1 else -1
+      Alive = true
+      HitTick = -1 }
 
+/// Crea el estado inicial del juego con las vidas y kills indicados
 let initialState vidas kills =
     let sh = screenH ()
     {
         Screen = Playing
-        PlayerX = 4
+        PlayerX = 4            /// Jugador siempre empieza a la izquierda
         PlayerY = sh / 2
         PlayerState = Alive
         PlayerHitTick = -1
         Vidas = vidas
         Kills = kills
-        Enemies = createEnemies () |> Array.toList
+        Enemies = [createEnemy ()]
         PlayerMissiles = []
         EnemyMissiles = []
         Tick = -1
@@ -76,15 +85,18 @@ let initialState vidas kills =
         ShootCooldown = 0
     }
 
+/// Incrementa el contador de ticks en cada ciclo del juego
 let updateTick state =
     { state with Tick = state.Tick + 1 }
 
+/// Reduce el cooldown de disparo del jugador
 let updateShootCooldown state =
     if state.ShootCooldown > 0 then
         { state with ShootCooldown = state.ShootCooldown - 1 }
     else
         state
 
+/// Mueve los misiles del jugador hacia la derecha y elimina los que salen de la pantalla
 let updatePlayerMissiles state =
     let sw = screenW ()
     if state.PlayerMissiles <> [] then
@@ -99,6 +111,7 @@ let updatePlayerMissiles state =
     else
         state
 
+/// Mueve los misiles enemigos hacia la izquierda y elimina los que salen de la pantalla
 let updateEnemyMissiles state =
     if state.EnemyMissiles <> [] then
         let nuevos =
@@ -112,6 +125,9 @@ let updateEnemyMissiles state =
     else
         state
 
+/// Actualiza la posición de los enemigos:
+/// - Cada 4 ticks: rebote vertical (cambia Y, rebota en los bordes)
+/// - Cada 12 ticks: avance horizontal hacia la izquierda (mínimo X=10)
 let updateEnemies state =
     let maxY = Console.BufferHeight - 1
     state.Enemies
@@ -136,6 +152,7 @@ let updateEnemies state =
         else
             state
 
+/// El enemigo dispara un misil hacia la izquierda cada 15 ticks
 let enemyShoot state =
     let aliveEnemies =
         state.Enemies |> List.filter (fun e -> e.Alive)
@@ -149,6 +166,7 @@ let enemyShoot state =
     else
         state
 
+/// Detecta si un misil del jugador golpea a un enemigo (distancia <= 2 en X y Y)
 let checkMissileCollisions state =
     let hitEnemy =
         state.PlayerMissiles
@@ -181,6 +199,7 @@ let checkMissileCollisions state =
             RedrawScreen = true }
     | None -> state
 
+/// Detecta si un misil enemigo golpea al jugador (distancia <= 1)
 let checkPlayerHit state =
     if state.PlayerState = Alive then
         let hit =
@@ -205,6 +224,9 @@ let checkPlayerHit state =
     else
         state
 
+/// Después de 40 ticks de estar explotando:
+/// - Si vidas <= 0: Game Over
+/// - Si aún tiene vidas: vuelve a estado Alive (el jugador sigue en la misma posición)
 let updateExplosions state =
     match state.PlayerState with
     | Exploding ->
@@ -220,6 +242,7 @@ let updateExplosions state =
             state
     | Alive -> state
 
+/// Si el enemigo actual murió y pasaron 20 ticks, reaparece uno nuevo
 let checkEnemyRespawn state =
     let hasAlive = state.Enemies |> List.exists (fun e -> e.Alive)
     if not hasAlive && state.Kills < 10 then
@@ -227,24 +250,27 @@ let checkEnemyRespawn state =
             state.Enemies
             |> List.forall (fun e -> state.Tick - e.HitTick >= 20)
         if allExploded && state.Enemies.Length > 0 then
-            { state with Enemies = createEnemies () |> Array.toList; RedrawScreen = true }
+            { state with Enemies = [createEnemy ()]; RedrawScreen = true }
         else
             state
     else
         state
 
+/// Escribe un carácter en pantalla (con protección de bordes)
 let renderChar x y color (c: char) =
     if x >= 0 && x < Console.BufferWidth && y >= 0 && y < Console.BufferHeight then
         Console.SetCursorPosition(x, y)
         Console.ForegroundColor <- color
         Console.Write c
 
+/// Escribe un string en pantalla (con protección de bordes)
 let renderStr x y color (s: string) =
     if y >= 0 && y < Console.BufferHeight then
         Console.SetCursorPosition(x, y)
         Console.ForegroundColor <- color
         Console.Write s
 
+/// Dibuja la interfaz superior: vidas, kills y puntaje
 let drawUI state =
     let vidaStr = String.replicate state.Vidas "❤️"
     let killsStr = sprintf "KILLS: %d / 10" state.Kills
@@ -253,6 +279,7 @@ let drawUI state =
     renderStr (Console.BufferWidth - 2 - killsStr.Length) 0 ConsoleColor.Cyan killsStr
     renderStr (Console.BufferWidth / 2 - scoreStr.Length / 2) 1 ConsoleColor.Yellow scoreStr
 
+/// Dibuja los enemigos (👾 si viven, 💥 si explotan)
 let drawEnemies state =
     state.Enemies
     |> List.iter (fun e ->
@@ -264,16 +291,13 @@ let drawEnemies state =
 
 let drawPlayerMissiles state =
     state.PlayerMissiles
-    |> List.iter (fun m ->
-        renderStr m.X m.Y ConsoleColor.Yellow "⇒"
-    )
+    |> List.iter (fun m -> renderStr m.X m.Y ConsoleColor.Yellow "⇒")
 
 let drawEnemyMissiles state =
     state.EnemyMissiles
-    |> List.iter (fun m ->
-        renderStr m.X m.Y ConsoleColor.Red "⇐"
-    )
+    |> List.iter (fun m -> renderStr m.X m.Y ConsoleColor.Red "⇐")
 
+/// Dibuja al jugador (🚀 si vive, 💥/⚰️ si explota)
 let drawPlayer state =
     match state.PlayerState with
     | Alive ->
@@ -284,6 +308,7 @@ let drawPlayer state =
         elif state.Tick - state.PlayerHitTick < 10 then
             renderStr state.PlayerX state.PlayerY ConsoleColor.Red "💥"
 
+/// Limpia el área de juego pintando toda la pantalla de negro
 let drawBackground () =
     let sw = Console.BufferWidth
     let sh = Console.BufferHeight
@@ -295,6 +320,7 @@ let drawBackground () =
         let y = rng.Next(1, sh - 2)
         renderChar x y ConsoleColor.DarkGray (if rng.Next(2) = 0 then '.' else '·')
 
+/// Redibuja la pantalla completa si RedrawScreen está activo
 let redrawScreen state =
     if state.RedrawScreen then
         drawBackground ()
@@ -307,6 +333,7 @@ let redrawScreen state =
     else
         state
 
+/// Procesa la tecla presionada: movimiento, disparo, pausa
 let processGameKeyboard (key: ConsoleKey) state =
     let sw = screenW ()
     let sh = screenH ()
@@ -334,6 +361,8 @@ let processGameKeyboard (key: ConsoleKey) state =
         | _ -> state
     | Exploding -> state
 
+/// Muestra el menú de pausa con CONTINUAR, GUARDAR y MENU PRINCIPAL
+/// Navegación con flechas, Enter para seleccionar, P para continuar rápido
 let rec handlePause state =
     let cx = Console.BufferWidth / 2
     let pauseLines = [|
@@ -381,6 +410,11 @@ let rec handlePause state =
     | _ ->
         { state with Screen = Quit }
 
+/// Bucle principal del juego:
+/// 1. Actualiza estado (tick, misiles, enemigos, colisiones)
+/// 2. Procesa teclado
+/// 3. Redibuja pantalla
+/// 4. Espera 25ms y repite
 and mainLoop state =
     if state.Screen = GameOver || state.Screen = Victory || state.Screen = Quit then
         state
@@ -417,6 +451,7 @@ and mainLoop state =
             Thread.Sleep 25
             mainLoop newState
 
+/// Inicia una partida nueva (3 vidas, 0 kills)
 let mostrar () =
     safeCursorVisible false
     safeClear ()
@@ -425,6 +460,7 @@ let mostrar () =
     safeClear ()
     finalState.Screen, finalState.Vidas, finalState.Kills
 
+/// Inicia una partida con datos cargados de una partida guardada
 let mostrarConDatos vidas kills =
     safeCursorVisible false
     safeClear ()

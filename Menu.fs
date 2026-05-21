@@ -1,9 +1,11 @@
+/// Módulo de menús - Dibuja pantallas de título, game over, victoria y menú principal
 module App.Menu
 
 open System
 open App.Utils
 open App.Types
 
+/// Arte ASCII del título "KILL E.T." en letras grandes
 let titleArt = [|
     @"██╗  ██╗██╗██╗     ██╗         ███████╗   ████████╗ "
     @"██║ ██╔╝██║██║     ██║         ██╔════╝   ╚══██╔══╝ "
@@ -13,6 +15,7 @@ let titleArt = [|
     @"╚═╝  ╚═╝╚═╝╚══════╝╚══════╝    ╚══════╝╚═╝   ╚═╝   ╚═╝"
 |]
 
+/// Arte "GAME OVER"
 let gameOverArt = [|
     "██████╗  █████╗ ███╗   ███╗███████╗     ██████╗ ██╗   ██╗███████╗██████╗ "
     "██╔════╝ ██╔══██╗████╗ ████║██╔════╝    ██╔═══██╗██║   ██║██╔════╝██╔══██╗"
@@ -22,6 +25,7 @@ let gameOverArt = [|
     " ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝     ╚═════╝   ╚═══╝  ╚══════╝╚═╝  ╚═╝"
 |]
 
+/// Arte "VICTORIA"
 let victoryArt = [|
     "██╗   ██╗██╗ ██████╗████████╗ ██████╗ ██████╗ ██╗ █████╗ "
     "██║   ██║██║██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██║██╔══██╗"
@@ -31,18 +35,7 @@ let victoryArt = [|
     "  ╚═══╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝"
 |]
 
-let coffinArt = [|
-    @"              _____     "
-    @"             /     \    "
-    @"            | () () |   "
-    @"             \  ^  /    "
-    @"              |||_|     "
-    @"              |   |     "
-    @"              |RIP|     "
-    @"              |E.T|     "
-    @"             /_____\    "
-|]
-
+/// Dibuja un borde decorativo alrededor de la pantalla
 let drawBorder () =
     let w = Console.BufferWidth - 1
     let h = Console.BufferHeight - 1
@@ -55,6 +48,7 @@ let drawBorder () =
         displayMessage w y ConsoleColor.DarkBlue "║"
     displayMessage 0 h ConsoleColor.DarkBlue bot
 
+/// Dibuja estrellas decorativas al azar en el fondo (solo estética)
 let drawStars () =
     let rng = Random 42
     for _ in 1 .. 40 do
@@ -63,6 +57,7 @@ let drawStars () =
         let star = if rng.Next(2) = 0 then "." else "·"
         displayMessage x y ConsoleColor.DarkGray star
 
+/// Dibuja las instrucciones de control en la parte inferior
 let drawInstructions () =
     let y = Console.BufferHeight - 4
     let text1 = "WASD/FLECHAS -> MOVER"
@@ -73,6 +68,7 @@ let drawInstructions () =
     displayMessage (cx - text2.Length / 2) (y + 1) ConsoleColor.DarkGray text2
     displayMessage (cx - text3.Length / 2) (y + 2) ConsoleColor.DarkGray text3
 
+/// Función genérica para mostrar un menú con arte, opciones y navegación por teclado
 let mostrarConMenu (titleLines : string[]) artY drawExtra (commands : (Command * string) array) =
     safeCursorVisible false
     let cx = Console.BufferWidth / 2
@@ -108,6 +104,7 @@ let mostrarConMenu (titleLines : string[]) artY drawExtra (commands : (Command *
     safeClear ()
     resultado
 
+/// Muestra el menú principal con NUEVA PARTIDA, CONTINUAR y SALIR
 let mostrarPrincipal () =
     mostrarConMenu titleArt 3 drawInstructions [|
         NuevaPartida, "NUEVA PARTIDA"
@@ -115,6 +112,7 @@ let mostrarPrincipal () =
         Salir, "SALIR"
     |]
 
+/// Muestra la pantalla de Game Over con kills y puntaje final
 let mostrarGameOver kills =
     let artY = Console.BufferHeight / 2 - 10
     let cx = Console.BufferWidth / 2
@@ -126,6 +124,7 @@ let mostrarGameOver kills =
         Salir, "SALIR"
     |]
 
+/// Muestra la pantalla de Victoria con kills y puntaje final
 let mostrarVictoria kills =
     let artY = Console.BufferHeight / 2 - 8
     let cx = Console.BufferWidth / 2
